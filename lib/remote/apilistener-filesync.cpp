@@ -421,6 +421,12 @@ void ApiListener::HandleConfigUpdate(const MessageOrigin::Ptr& origin, const Dic
 		Dictionary::Ptr productionConfig = MergeConfigUpdate(productionConfigInfo);
 		Dictionary::Ptr newConfig = MergeConfigUpdate(newConfigInfo);
 
+		bool timestampChanged = false;
+
+		if (CompareTimestampsConfigChange(productionConfig, newConfig, stageConfigZoneDir)) {
+			timestampChanged = true;
+		}
+
 		/* If we have received 'checksums' via cluster message, go for it.
 		 * Otherwise do the old timestamp dance for versions < 2.11.
 		 */
@@ -429,7 +435,7 @@ void ApiListener::HandleConfigUpdate(const MessageOrigin::Ptr& origin, const Dic
 				<< "Received configuration for zone '" << zoneName << "' from endpoint '"
 				<< fromEndpointName << "'. Comparing the timestamp and checksums.";
 
-			if (CompareTimestampsConfigChange(productionConfig, newConfig, stageConfigZoneDir)) {
+			if (timestampChanged) {
 
 				if (CheckConfigChange(productionConfigInfo, newConfigInfo))
 					configChange = true;
@@ -446,7 +452,7 @@ void ApiListener::HandleConfigUpdate(const MessageOrigin::Ptr& origin, const Dic
 				<< "Received configuration update without checksums from parent endpoint "
 				<< fromEndpointName << ". This behaviour is deprecated. Please upgrade the parent endpoint to 2.11+";
 
-			if (CompareTimestampsConfigChange(productionConfig, newConfig, stageConfigZoneDir)) {
+			if (timestampChanged) {
 				configChange = true;
 			}
 
@@ -508,11 +514,11 @@ void ApiListener::HandleConfigUpdate(const MessageOrigin::Ptr& origin, const Dic
 			<< "Applying configuration file update for path '" << stageConfigZoneDir << "' ("
 			<< numBytes << " Bytes).";
 
-		// If the update removes a path, delete it on disk and signal a config change.
-		{
+		if (timestampChanged) {
+			// If the update removes a path, delete it on disk and signal a config change.
 			ObjectLock xlock(productionConfig);
 
-			for (const Dictionary::Pair& kv : productionConfig) {
+			for (const Dictionary::Pair &kv : productionConfig) {
 				if (!newConfig->Contains(kv.first)) {
 					configChange = true;
 
